@@ -11,13 +11,13 @@ int main( int argc, char *argv[] )
     //std::string cmd = R"(/usr/bin/dialog --title "This should be one argument" --inputbox "Enter your name:" 0 0)";
 
     // (whiptail) (working)
-    std::string cmd = R"(/usr/bin/bash -c 'TERM=ansi whiptail --title "Example Dialog" --yesno "This is an example of a yes/no box." 8 78')";
+    //std::string cmd = R"(/usr/bin/bash -c 'TERM=ansi whiptail --title "Example Dialog" --yesno "This is an example of a yes/no box." 8 78')";
 
     // test of exit code return
     //std::string cmd = R"(false)";
 
     // test with a command that echos back to stdout/stderr whatever is typed
-    //std::string cmd = R"(/usr/bin/parrot)";
+    std::string cmd = R"(/usr/bin/parrot)";
 
     // parrot is just a dummy repeater script in bash:
     /*

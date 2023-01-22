@@ -183,3 +183,9 @@ int execute( std::string command, std::string stdout_log_file, std::string stder
         }
     }
 }
+
+int execute_pty( std::string command, std::string stdout_log_file, std::string stderr_log_file )
+{
+    // not yet implemented
+    return 0;
+}
