@@ -1,12 +1,117 @@
-#include "liblcpex.h"
+#include "libclpex_tty.h"
 
+
+int execute_pty( std::string command, std::string stdout_log_file, std::string stderr_log_file )
+{
+    // status result basket for the parent process to capture the child's exit status
+    int status = 616;
+
+    // turn our command string into something execvp can consume
+    char ** processed_command = expand_env(command );
+
+    const struct termios * slaveTermios;
+    const  struct winsize * slaveWS;
+
+    int mfd, slaveFd, savedErrno;
+    char slname[20];
+
+    // open master
+    mfd = ptyMasterOpen();
+
+    // if the new master vpty is invalid, return an error
+    if ( mfd == -1 )
+    {
+        return -1;
+    }
+
+    // fork a child
+    pid_t pid = fork();
+
+    switch ( pid )
+    {
+        case -1:
+        {
+            /* close() might change 'errno' */
+            savedErrno = errno;
+            /* Don't leak file descriptors */
+            close(mfd);
+            errno = savedErrno;
+            return -1;
+        }
+
+        case 0:
+        {
+            // child process
+            /* Child falls through to here */
+
+            /* Start a new session */
+            if (setsid() == -1)
+                perror("ptyFork:setsid");
+
+            /* Not needed in child */
+            close(mfd);
+
+            /* Becomes controlling tty */
+            slaveFd = open(slname, O_RDWR);
+            if (slaveFd == -1)
+                perror("ptyFork:open-slave");
+
+            /* Set slave tty attributes */
+            if (slaveTermios != nullptr)
+                if (tcsetattr(slaveFd, TCSANOW, slaveTermios) == -1)
+                    perror("ptyFork:tcsetattr");
+
+            /* Set slave tty window size */
+            if (slaveWS != nullptr)
+                if (ioctl(slaveFd, TIOCSWINSZ, slaveWS) == -1)
+                    perror("ptyFork:ioctl-TIOCSWINSZ");
+
+            // Duplicate vpty slave to be child's stdin, stdout, and stderr
+            if (dup2(slaveFd, STDIN_FILENO) != STDIN_FILENO)
+                perror("ptyFork:dup2-STDIN_FILENO");
+            if (dup2(slaveFd, STDOUT_FILENO) != STDOUT_FILENO)
+                perror("ptyFork:dup2-STDOUT_FILENO");
+            if (dup2(slaveFd, STDERR_FILENO) != STDERR_FILENO)
+                perror("ptyFork:dup2-STDERR_FILENO");
+
+            // Safety check
+            if (slaveFd > STDERR_FILENO)
+            {
+                // No longer need this fd
+                close(slaveFd);
+            }
+
+            /* begin original fork() code */
+            // execute the dang command, print to stdout, stderr (of parent), and dump to file for each!!!!
+            // (and capture exit code in parent)
+            int exit_code = execvp(processed_command[0], processed_command);
+            perror("failed on execvp in child");
+            exit(exit_code);
+        }
+
+        default:
+        {
+            // parent process
+            // wait for child to exit, capture status
+            waitpid(pid, &status, 0);
+
+            // close the log file handles
+            //fclose(stdout_log_fh);
+            //fclose(stderr_log_fh);
+            return status;
+        }
+    }
+
+    // Like child of fork()
+    return 0;
+}
 
 
 // this does three things:
 //  - execute a dang string as a subprocess command
 //  - capture child stdout/stderr to respective log files
 //  - TEE child stdout/stderr to parent stdout/stderr
-int execute( std::string command, std::string stdout_log_file, std::string stderr_log_file )
+int execute_pty2( std::string command, std::string stdout_log_file, std::string stderr_log_file )
 {
     // turn our command string into something execvp can consume
     char ** processed_command = expand_env(command );
@@ -54,7 +159,8 @@ int execute( std::string command, std::string stdout_log_file, std::string stder
 
     // status result basket for the parent process to capture the child's exit status
     int status = 616;
-    pid_t pid = fork();
+    int ptyFD = -1;
+    pid_t pid = forkpty( &ptyFD, nullptr, nullptr, nullptr );
 
     switch( pid ) {
         case -1:

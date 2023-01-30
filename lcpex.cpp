@@ -1,5 +1,6 @@
 #include <iostream>
 #include "src/liblcpex.h"
+#include "src/vpty/libclpex_tty.h"
 
 int main( int argc, char *argv[] )
 {
@@ -7,8 +8,8 @@ int main( int argc, char *argv[] )
     // It tees the child's stdout/stderr to corresponding log files as well as to parent's stdout/stderr
 
     // test with interactive dialogs
-    // (ncurses) (not working - no pty)
-    //std::string cmd = R"(/usr/bin/dialog --title "This should be one argument" --inputbox "Enter your name:" 0 0)";
+    // (ncurses) (not working - no vpty)
+    std::string cmd = R"(/usr/bin/dialog --title "This should be one argument" --inputbox "Enter your name:" 0 0)";
 
     // (whiptail) (working)
     //std::string cmd = R"(/usr/bin/bash -c 'TERM=ansi whiptail --title "Example Dialog" --yesno "This is an example of a yes/no box." 8 78')";
@@ -17,7 +18,7 @@ int main( int argc, char *argv[] )
     //std::string cmd = R"(false)";
 
     // test with a command that echos back to stdout/stderr whatever is typed
-    std::string cmd = R"(/usr/bin/parrot)";
+    //std::string cmd = R"(/usr/bin/parrot)";
 
     // parrot is just a dummy repeater script in bash:
     /*
@@ -32,6 +33,7 @@ int main( int argc, char *argv[] )
 
      */
 
-    int x = execute( cmd, "stdout.log", "stderr.log" );
+    //int x = execute( cmd, "stdout.log", "stderr.log" );
+    int x = execute_pty2( cmd, "stdout.log", "stderr.log" );
     return x;
 }
