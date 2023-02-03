@@ -14,6 +14,14 @@
    on error. If 'prevTermios' is non-NULL, then use the buffer to which
    it points to return the previous terminal settings. */
 
+/* Reset terminal mode on program exit */
+void ttyResetExit( struct termios * ttyOrig )
+{
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, ttyOrig) == -1)
+        perror("tcsetattr");
+}
+
+
 int ttySetCbreak(int fd, struct termios *prevTermios)
 {
     struct termios t;

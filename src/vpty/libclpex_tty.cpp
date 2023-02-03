@@ -1,88 +1,10 @@
 #include "libclpex_tty.h"
 
-#define MAX_SNAME 1000                  /* Maximum size for pty slave name */
-struct termios ttyOrig;
-
-/* Reset terminal mode on program exit */
-static void ttyReset(void)
+void safe_perror( const char * msg, struct termios * ttyOrig )
 {
-    if (tcsetattr(STDIN_FILENO, TCSANOW, &ttyOrig) == -1)
-        perror("tcsetattr");
-}
-
-pid_t ptyFork(int *masterFd, char *slaveName, size_t snLen,
-        const struct termios *slaveTermios, const struct winsize *slaveWS)
-{
-    int mfd, slaveFd, savedErrno;
-    pid_t childPid;
-    char slname[MAX_SNAME];
-
-    mfd = ptyMasterOpen(slname, MAX_SNAME);
-    if (mfd == -1)
-        return -1;
-
-    if (slaveName != NULL) {            /* Return slave name to caller */
-        if (strlen(slname) < snLen) {
-            strncpy(slaveName, slname, snLen);
-
-        } else {                        /* 'slaveName' was too small */
-            close(mfd);
-            errno = EOVERFLOW;
-            return -1;
-        }
-    }
-
-    childPid = fork();
-
-    if (childPid == -1) {               /* fork() failed */
-        savedErrno = errno;             /* close() might change 'errno' */
-        close(mfd);                     /* Don't leak file descriptors */
-        errno = savedErrno;
-        return -1;
-    }
-
-    if (childPid != 0) {                /* Parent */
-        *masterFd = mfd;                /* Only parent gets master fd */
-        return childPid;                /* Like parent of fork() */
-    }
-
-    /* Child falls through to here */
-
-    if (setsid() == -1)                 /* Start a new session */
-        perror("ptyFork:setsid");
-
-    close(mfd);                         /* Not needed in child */
-
-    slaveFd = open(slname, O_RDWR);     /* Becomes controlling tty */
-    if (slaveFd == -1)
-        perror("ptyFork:open-slave");
-
-#ifdef TIOCSCTTY                        /* Acquire controlling tty on BSD */
-    if (ioctl(slaveFd, TIOCSCTTY, 0) == -1)
-        perror("ptyFork:ioctl-TIOCSCTTY");
-#endif
-
-    if (slaveTermios != NULL)           /* Set slave tty attributes */
-        if (tcsetattr(slaveFd, TCSANOW, slaveTermios) == -1)
-            perror("ptyFork:tcsetattr");
-
-    if (slaveWS != NULL)                /* Set slave tty window size */
-        if (ioctl(slaveFd, TIOCSWINSZ, slaveWS) == -1)
-            perror("ptyFork:ioctl-TIOCSWINSZ");
-
-    /* Duplicate pty slave to be child's stdin, stdout, and stderr */
-
-    if (dup2(slaveFd, STDIN_FILENO) != STDIN_FILENO)
-        perror("ptyFork:dup2-STDIN_FILENO");
-    if (dup2(slaveFd, STDOUT_FILENO) != STDOUT_FILENO)
-        perror("ptyFork:dup2-STDOUT_FILENO");
-    if (dup2(slaveFd, STDERR_FILENO) != STDERR_FILENO)
-        perror("ptyFork:dup2-STDERR_FILENO");
-
-    if (slaveFd > STDERR_FILENO)        /* Safety check */
-        close(slaveFd);                 /* No longer need this fd */
-
-    return 0;                           /* Like child of fork() */
+    std::cerr << msg << std::endl;
+    ttyResetExit( ttyOrig );
+    exit(1);
 }
 
 // this does three things:
@@ -91,6 +13,8 @@ pid_t ptyFork(int *masterFd, char *slaveName, size_t snLen,
 //  - TEE child stdout/stderr to parent stdout/stderr
 int execute_pty( std::string command, std::string stdout_log_file, std::string stderr_log_file )
 {
+    struct termios ttyOrig;
+
     // turn our command string into something execvp can consume
     char ** processed_command = expand_env(command );
 
@@ -98,42 +22,19 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
     FILE * stdout_log_fh = fopen( stdout_log_file.c_str(), "a+" );
     FILE * stderr_log_fh = fopen( stderr_log_file.c_str(), "a+" );
 
-    // create the pipes for the child process to write and read from using its stdin/stdout/stderr
-    int fd_child_stdout_pipe[2];
+    // create the pipes for the child process to write and read from using its stderr
     int fd_child_stderr_pipe[2];
 
-    if ( pipe(fd_child_stdout_pipe ) == -1 ) {
-        perror( "child stdout pipe" );
-        exit( 1 );
-    }
-
     if ( pipe( fd_child_stderr_pipe ) == -1 ) {
-        perror( "child stderr pipe" );
+        safe_perror( "child stderr pipe", &ttyOrig );
         exit( 1 );
     }
 
     // using O_CLOEXEC to ensure that the child process closes the file descriptors
-    if ( fcntl( fd_child_stdout_pipe[READ_END], F_SETFD, FD_CLOEXEC ) == -1 ) {
-        perror("fcntl");
-        exit(1);
-    }
-    // same for stderr
-    if ( fcntl( fd_child_stderr_pipe[READ_END], F_SETFD, FD_CLOEXEC ) == -1 ) {
-        perror("fcntl");
-        exit(1);
-    }
-
-    // same for stdout write
-    if ( fcntl( fd_child_stdout_pipe[WRITE_END], F_SETFD, FD_CLOEXEC ) == -1 ) {
-        perror("fcntl");
-        exit(1);
-    }
+    if ( fcntl( fd_child_stderr_pipe[READ_END], F_SETFD, FD_CLOEXEC ) == -1 ) { perror("fcntl"); exit(1); }
 
     //    // same for stderr write
-    if ( fcntl( fd_child_stderr_pipe[WRITE_END], F_SETFD, FD_CLOEXEC ) == -1 ) {
-        perror("fcntl");
-        exit(1);
-    }
+    if ( fcntl( fd_child_stderr_pipe[WRITE_END], F_SETFD, FD_CLOEXEC ) == -1 ) { perror("fcntl"); exit(1); }
 
     // status result basket for the parent process to capture the child's exit status
     int status = 616;
@@ -145,12 +46,11 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
     struct winsize ws;
     ssize_t numRead;
 
-
     /* Retrieve the attributes of terminal on which we are started */
     if (tcgetattr(STDIN_FILENO, &ttyOrig) == -1)
-        perror("tcgetattr");
+        safe_perror("tcgetattr", &ttyOrig);
     if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) < 0)
-        perror("ioctl-TIOCGWINSZ");
+        safe_perror("ioctl-TIOCGWINSZ", &ttyOrig );
 
     pid_t pid = ptyFork( &masterFd, slaveName, MAX_SNAME, &ttyOrig, &ws );
 
@@ -158,7 +58,7 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
         case -1:
         {
             // fork failed
-            perror("ptyfork failure");
+            safe_perror("ptyfork failure", &ttyOrig );
             exit(1);
         }
 
@@ -166,14 +66,13 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
         {
             // child process
 
-            // close the file descriptor STDOUT_FILENO if it was previously open, then (re)open it as a copy of
-            //while ((dup2(fd_child_stdout_pipe[WRITE_END], STDOUT_FILENO) == -1) && (errno == EINTR)) {}
+            // close the file descriptor STDERR_FILENO if it was previously open, then (re)open it as a copy of
             while ((dup2(fd_child_stderr_pipe[WRITE_END], STDERR_FILENO) == -1) && (errno == EINTR)) {}
 
             // execute the dang command, print to stdout, stderr (of parent), and dump to file for each!!!!
             // (and capture exit code in parent)
             int exit_code = execvp(processed_command[0], processed_command);
-            perror("failed on execvp in child");
+            safe_perror("failed on execvp in child", &ttyOrig );
             exit(exit_code);
         }
 
@@ -184,15 +83,8 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
             // start ptyfork integration
             ttySetRaw(STDIN_FILENO, &ttyOrig);
 
-            if (atexit(ttyReset) != 0)
-                perror("atexit");
-
-
-
-
-            // The parent process has no need to access the entrance to the pipe, so fd_child_*_pipe[1|0] should be closed
-            // within that process too:
-            close(fd_child_stdout_pipe[WRITE_END]);
+            // The parent process has no need to access the entrance to the pipe, so fd_child_*_pipe[1|0] should be
+            // closed within that process too:
             close(fd_child_stderr_pipe[WRITE_END]);
 
             // attempt to write to stdout,stderr from child as well as to write each to file
@@ -228,7 +120,7 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
                 num_files_readable = poll(watched_fds, sizeof(watched_fds) / sizeof(watched_fds[0]), -1);
                 if (num_files_readable == -1) {
                     // error occurred in poll()
-                    perror("poll");
+                    safe_perror("poll", &ttyOrig );
                     exit(1);
                 }
                 if (num_files_readable == 0) {
@@ -243,7 +135,7 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
 
                         if (byte_count == -1) {
                             // error reading from pipe
-                            perror("read");
+                            safe_perror("read", &ttyOrig );
                             exit(EXIT_FAILURE);
                         } else if (byte_count == 0) {
                             // reached EOF on one of the streams but not a HUP
@@ -291,7 +183,8 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
             // close the log file handles
             fclose(stdout_log_fh);
             fclose(stderr_log_fh);
-            return status;
+            ttyResetExit( &ttyOrig);
+            return WEXITSTATUS( status );
         }
     }
 }
