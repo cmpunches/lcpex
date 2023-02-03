@@ -34,6 +34,6 @@ int main( int argc, char *argv[] )
      */
 
     //int x = execute( cmd, "stdout.log", "stderr.log" );
-    int x = execute_pty2( cmd, "stdout.log", "stderr.log" );
+    int x = execute_pty( cmd, "stdout.log", "stderr.log" );
     return x;
 }

@@ -1,117 +1,95 @@
 #include "libclpex_tty.h"
 
+#define MAX_SNAME 1000                  /* Maximum size for pty slave name */
+struct termios ttyOrig;
 
-int execute_pty( std::string command, std::string stdout_log_file, std::string stderr_log_file )
+/* Reset terminal mode on program exit */
+static void ttyReset(void)
 {
-    // status result basket for the parent process to capture the child's exit status
-    int status = 616;
+    if (tcsetattr(STDIN_FILENO, TCSANOW, &ttyOrig) == -1)
+        perror("tcsetattr");
+}
 
-    // turn our command string into something execvp can consume
-    char ** processed_command = expand_env(command );
-
-    const struct termios * slaveTermios;
-    const  struct winsize * slaveWS;
-
+pid_t ptyFork(int *masterFd, char *slaveName, size_t snLen,
+        const struct termios *slaveTermios, const struct winsize *slaveWS)
+{
     int mfd, slaveFd, savedErrno;
-    char slname[20];
+    pid_t childPid;
+    char slname[MAX_SNAME];
 
-    // open master
-    mfd = ptyMasterOpen();
+    mfd = ptyMasterOpen(slname, MAX_SNAME);
+    if (mfd == -1)
+        return -1;
 
-    // if the new master vpty is invalid, return an error
-    if ( mfd == -1 )
-    {
+    if (slaveName != NULL) {            /* Return slave name to caller */
+        if (strlen(slname) < snLen) {
+            strncpy(slaveName, slname, snLen);
+
+        } else {                        /* 'slaveName' was too small */
+            close(mfd);
+            errno = EOVERFLOW;
+            return -1;
+        }
+    }
+
+    childPid = fork();
+
+    if (childPid == -1) {               /* fork() failed */
+        savedErrno = errno;             /* close() might change 'errno' */
+        close(mfd);                     /* Don't leak file descriptors */
+        errno = savedErrno;
         return -1;
     }
 
-    // fork a child
-    pid_t pid = fork();
-
-    switch ( pid )
-    {
-        case -1:
-        {
-            /* close() might change 'errno' */
-            savedErrno = errno;
-            /* Don't leak file descriptors */
-            close(mfd);
-            errno = savedErrno;
-            return -1;
-        }
-
-        case 0:
-        {
-            // child process
-            /* Child falls through to here */
-
-            /* Start a new session */
-            if (setsid() == -1)
-                perror("ptyFork:setsid");
-
-            /* Not needed in child */
-            close(mfd);
-
-            /* Becomes controlling tty */
-            slaveFd = open(slname, O_RDWR);
-            if (slaveFd == -1)
-                perror("ptyFork:open-slave");
-
-            /* Set slave tty attributes */
-            if (slaveTermios != nullptr)
-                if (tcsetattr(slaveFd, TCSANOW, slaveTermios) == -1)
-                    perror("ptyFork:tcsetattr");
-
-            /* Set slave tty window size */
-            if (slaveWS != nullptr)
-                if (ioctl(slaveFd, TIOCSWINSZ, slaveWS) == -1)
-                    perror("ptyFork:ioctl-TIOCSWINSZ");
-
-            // Duplicate vpty slave to be child's stdin, stdout, and stderr
-            if (dup2(slaveFd, STDIN_FILENO) != STDIN_FILENO)
-                perror("ptyFork:dup2-STDIN_FILENO");
-            if (dup2(slaveFd, STDOUT_FILENO) != STDOUT_FILENO)
-                perror("ptyFork:dup2-STDOUT_FILENO");
-            if (dup2(slaveFd, STDERR_FILENO) != STDERR_FILENO)
-                perror("ptyFork:dup2-STDERR_FILENO");
-
-            // Safety check
-            if (slaveFd > STDERR_FILENO)
-            {
-                // No longer need this fd
-                close(slaveFd);
-            }
-
-            /* begin original fork() code */
-            // execute the dang command, print to stdout, stderr (of parent), and dump to file for each!!!!
-            // (and capture exit code in parent)
-            int exit_code = execvp(processed_command[0], processed_command);
-            perror("failed on execvp in child");
-            exit(exit_code);
-        }
-
-        default:
-        {
-            // parent process
-            // wait for child to exit, capture status
-            waitpid(pid, &status, 0);
-
-            // close the log file handles
-            //fclose(stdout_log_fh);
-            //fclose(stderr_log_fh);
-            return status;
-        }
+    if (childPid != 0) {                /* Parent */
+        *masterFd = mfd;                /* Only parent gets master fd */
+        return childPid;                /* Like parent of fork() */
     }
 
-    // Like child of fork()
-    return 0;
-}
+    /* Child falls through to here */
 
+    if (setsid() == -1)                 /* Start a new session */
+        perror("ptyFork:setsid");
+
+    close(mfd);                         /* Not needed in child */
+
+    slaveFd = open(slname, O_RDWR);     /* Becomes controlling tty */
+    if (slaveFd == -1)
+        perror("ptyFork:open-slave");
+
+#ifdef TIOCSCTTY                        /* Acquire controlling tty on BSD */
+    if (ioctl(slaveFd, TIOCSCTTY, 0) == -1)
+        perror("ptyFork:ioctl-TIOCSCTTY");
+#endif
+
+    if (slaveTermios != NULL)           /* Set slave tty attributes */
+        if (tcsetattr(slaveFd, TCSANOW, slaveTermios) == -1)
+            perror("ptyFork:tcsetattr");
+
+    if (slaveWS != NULL)                /* Set slave tty window size */
+        if (ioctl(slaveFd, TIOCSWINSZ, slaveWS) == -1)
+            perror("ptyFork:ioctl-TIOCSWINSZ");
+
+    /* Duplicate pty slave to be child's stdin, stdout, and stderr */
+
+    if (dup2(slaveFd, STDIN_FILENO) != STDIN_FILENO)
+        perror("ptyFork:dup2-STDIN_FILENO");
+    if (dup2(slaveFd, STDOUT_FILENO) != STDOUT_FILENO)
+        perror("ptyFork:dup2-STDOUT_FILENO");
+    if (dup2(slaveFd, STDERR_FILENO) != STDERR_FILENO)
+        perror("ptyFork:dup2-STDERR_FILENO");
+
+    if (slaveFd > STDERR_FILENO)        /* Safety check */
+        close(slaveFd);                 /* No longer need this fd */
+
+    return 0;                           /* Like child of fork() */
+}
 
 // this does three things:
 //  - execute a dang string as a subprocess command
 //  - capture child stdout/stderr to respective log files
 //  - TEE child stdout/stderr to parent stdout/stderr
-int execute_pty2( std::string command, std::string stdout_log_file, std::string stderr_log_file )
+int execute_pty( std::string command, std::string stdout_log_file, std::string stderr_log_file )
 {
     // turn our command string into something execvp can consume
     char ** processed_command = expand_env(command );
@@ -159,14 +137,28 @@ int execute_pty2( std::string command, std::string stdout_log_file, std::string 
 
     // status result basket for the parent process to capture the child's exit status
     int status = 616;
-    int ptyFD = -1;
-    pid_t pid = forkpty( &ptyFD, nullptr, nullptr, nullptr );
+
+    // start ptyfork integration
+    char slaveName[MAX_SNAME];
+    char *shell;
+    int masterFd, scriptFd;
+    struct winsize ws;
+    ssize_t numRead;
+
+
+    /* Retrieve the attributes of terminal on which we are started */
+    if (tcgetattr(STDIN_FILENO, &ttyOrig) == -1)
+        perror("tcgetattr");
+    if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) < 0)
+        perror("ioctl-TIOCGWINSZ");
+
+    pid_t pid = ptyFork( &masterFd, slaveName, MAX_SNAME, &ttyOrig, &ws );
 
     switch( pid ) {
         case -1:
         {
             // fork failed
-            perror("fork failure");
+            perror("ptyfork failure");
             exit(1);
         }
 
@@ -175,8 +167,8 @@ int execute_pty2( std::string command, std::string stdout_log_file, std::string 
             // child process
 
             // close the file descriptor STDOUT_FILENO if it was previously open, then (re)open it as a copy of
-            while ((dup2(fd_child_stdout_pipe[WRITE_END], STDOUT_FILENO) == -1) && (errno == EINTR)) {}
-            while ((dup2(fd_child_stderr_pipe[WRITE_END], STDERR_FILENO) == -1) && (errno == EINTR)) {}
+            //while ((dup2(fd_child_stdout_pipe[WRITE_END], STDOUT_FILENO) == -1) && (errno == EINTR)) {}
+            //while ((dup2(fd_child_stderr_pipe[WRITE_END], STDERR_FILENO) == -1) && (errno == EINTR)) {}
 
             // execute the dang command, print to stdout, stderr (of parent), and dump to file for each!!!!
             // (and capture exit code in parent)
@@ -188,6 +180,15 @@ int execute_pty2( std::string command, std::string stdout_log_file, std::string 
         default:
         {
             // parent process
+
+            // start ptyfork integration
+            ttySetRaw(STDIN_FILENO, &ttyOrig);
+
+            if (atexit(ttyReset) != 0)
+                perror("atexit");
+
+
+
 
             // The parent process has no need to access the entrance to the pipe, so fd_child_*_pipe[1|0] should be closed
             // within that process too:
@@ -206,12 +207,12 @@ int execute_pty2( std::string command, std::string stdout_log_file, std::string 
             // populate the watched_fds array
 
             // child STDOUT to parent
-            watched_fds[CHILD_PIPE_NAMES::STDOUT_READ].fd = fd_child_stdout_pipe[READ_END];
-            watched_fds[CHILD_PIPE_NAMES::STDOUT_READ].events = POLLIN;
+            watched_fds[0].fd = STDIN_FILENO;
+            watched_fds[0].events = POLLIN;
 
             // child STDERR to parent
-            watched_fds[CHILD_PIPE_NAMES::STDERR_READ].fd = fd_child_stderr_pipe[READ_END];
-            watched_fds[CHILD_PIPE_NAMES::STDERR_READ].events = POLLIN;
+            watched_fds[1].fd = masterFd;
+            watched_fds[1].events = POLLIN;
 
             // number of files poll() reports as ready
             int num_files_readable;
@@ -249,14 +250,13 @@ int execute_pty2( std::string command, std::string stdout_log_file, std::string 
                         } else {
                             // byte count was sane
                             // write to stdout,stderr
-                            if (this_fd == CHILD_PIPE_NAMES::STDOUT_READ) {
+                            if (this_fd == 0) {
                                 // the child's stdout pipe is readable
+                                write(masterFd, buf, byte_count);
+                            } else if (this_fd == 1 ) {
+                                // the child's stderr pipe is readable
                                 write(stdout_log_fh->_fileno, buf, byte_count);
                                 write(STDOUT_FILENO, buf, byte_count);
-                            } else if (this_fd == CHILD_PIPE_NAMES::STDERR_READ) {
-                                // the child's stderr pipe is readable
-                                write(stderr_log_fh->_fileno, buf, byte_count);
-                                write(STDERR_FILENO, buf, byte_count);
                             } else {
                                 // this should never happen
                                 perror("Logic error!");

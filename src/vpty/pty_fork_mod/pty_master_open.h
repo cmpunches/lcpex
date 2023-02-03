@@ -13,6 +13,6 @@
 #include <csignal>
 #include <cstring>
 
-int ptyMasterOpen();
+int ptyMasterOpen(char *slaveName, size_t snLen);
 
 #endif //LCPEX_PTY_MASTER_OPEN_H
