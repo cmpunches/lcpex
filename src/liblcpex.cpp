@@ -178,7 +178,11 @@ int execute( std::string command, std::string stdout_log_file, std::string stder
             // close the log file handles
             fclose(stdout_log_fh);
             fclose(stderr_log_fh);
-            return status;
+            if WIFEXITED(status) {
+                return WEXITSTATUS(status);
+            } else {
+                return -617;
+            }
         }
     }
 }

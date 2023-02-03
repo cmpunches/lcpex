@@ -41,10 +41,8 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
 
     // start ptyfork integration
     char slaveName[MAX_SNAME];
-    char *shell;
-    int masterFd, scriptFd;
+    int masterFd;
     struct winsize ws;
-    ssize_t numRead;
 
     /* Retrieve the attributes of terminal on which we are started */
     if (tcgetattr(STDIN_FILENO, &ttyOrig) == -1)
