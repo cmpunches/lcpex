@@ -184,7 +184,11 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
             fclose(stdout_log_fh);
             fclose(stderr_log_fh);
             ttyResetExit( &ttyOrig);
-            return WEXITSTATUS( status );
+            if WIFEXITED(status) {
+                return WEXITSTATUS(status);
+            } else {
+                return -617;
+            }
         }
     }
 }
