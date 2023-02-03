@@ -168,7 +168,7 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
 
             // close the file descriptor STDOUT_FILENO if it was previously open, then (re)open it as a copy of
             //while ((dup2(fd_child_stdout_pipe[WRITE_END], STDOUT_FILENO) == -1) && (errno == EINTR)) {}
-            //while ((dup2(fd_child_stderr_pipe[WRITE_END], STDERR_FILENO) == -1) && (errno == EINTR)) {}
+            while ((dup2(fd_child_stderr_pipe[WRITE_END], STDERR_FILENO) == -1) && (errno == EINTR)) {}
 
             // execute the dang command, print to stdout, stderr (of parent), and dump to file for each!!!!
             // (and capture exit code in parent)
@@ -202,7 +202,7 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
             ssize_t byte_count;
 
             // watched_fds for poll() to wait on
-            struct pollfd watched_fds[2];
+            struct pollfd watched_fds[3];
 
             // populate the watched_fds array
 
@@ -213,6 +213,9 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
             // child STDERR to parent
             watched_fds[1].fd = masterFd;
             watched_fds[1].events = POLLIN;
+
+            watched_fds[2].fd = fd_child_stderr_pipe[READ_END];
+            watched_fds[2].events = POLLIN;
 
             // number of files poll() reports as ready
             int num_files_readable;
@@ -233,7 +236,7 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
                     break_out = true;
                     break;
                 }
-                for (int this_fd = 0; this_fd < 2; this_fd++) {
+                for (int this_fd = 0; this_fd < 3; this_fd++) {
                     if (watched_fds[this_fd].revents & POLLIN) {
                         // this pipe is readable
                         byte_count = read(watched_fds[this_fd].fd, buf, BUFFER_SIZE);
@@ -254,9 +257,13 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
                                 // the child's stdout pipe is readable
                                 write(masterFd, buf, byte_count);
                             } else if (this_fd == 1 ) {
-                                // the child's stderr pipe is readable
+                                // the child's stdout pipe is readable
                                 write(stdout_log_fh->_fileno, buf, byte_count);
                                 write(STDOUT_FILENO, buf, byte_count);
+                            } else if ( this_fd == 2 ){
+                                //the child's stderr
+                                write(stderr_log_fh->_fileno, buf, byte_count);
+                                write(STDERR_FILENO, buf, byte_count);
                             } else {
                                 // this should never happen
                                 perror("Logic error!");
