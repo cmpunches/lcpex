@@ -4,7 +4,7 @@
 #include "./pty_fork_mod/pty_master_open.h"
 #include "./pty_fork_mod/tty_functions.h"
 #include "./pty_fork_mod/pty_fork.h"
-#include "../string_expansion.h"
+#include "../string_expansion/string_expansion.h"
 #include "../helpers.h"
 #include <iostream>
 #include <cstdio>

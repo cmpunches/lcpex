@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <iostream>
-#include "string_expansion.h"
+#include "string_expansion/string_expansion.h"
 #include "helpers.h"
 
 // execute
