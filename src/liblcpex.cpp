@@ -1,6 +1,17 @@
 #include "liblcpex.h"
 
 
+int lcpex( std::string command, std::string stdout_log_file, std::string stderr_log_file, bool force_pty = false )
+{
+    // if we are forcing a pty, then we will use the vpty library
+    if( force_pty )
+    {
+        return execute_pty( command, stdout_log_file, stderr_log_file );
+    }
+
+    // otherwise, we will use the execute function
+    return execute( command, stdout_log_file, stderr_log_file );
+}
 
 // this does three things:
 //  - execute a dang string as a subprocess command

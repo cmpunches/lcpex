@@ -10,6 +10,7 @@
 #include <iostream>
 #include "string_expansion/string_expansion.h"
 #include "helpers.h"
+#include "vpty/libclpex_tty.h"
 
 // execute
 // uses fork/pipe/dup2/execvp using only pipes for i/o stream redirection
@@ -17,6 +18,6 @@
 // log paths specified as arguments
 int execute( std::string command, std::string stdout_log_file, std::string stderr_log_file );
 
-
+int lcpex( std::string command, std::string stdout_log_file, std::string stderr_log_file, bool force_pty );
 
 #endif //LCPEX_LIBLCPEX_H

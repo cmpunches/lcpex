@@ -1,6 +1,5 @@
 #include <iostream>
 #include "src/liblcpex.h"
-#include "src/vpty/libclpex_tty.h"
 
 int main( int argc, char *argv[] )
 {
@@ -34,8 +33,6 @@ int main( int argc, char *argv[] )
 
      */
 
-    //int x = execute( cmd, "stdout.log", "stderr.log" );
-    int x = execute_pty( cmd, "stdout.log", "stderr.log" );
-    int y = execute_pty( cmd3, "stdout.log", "stderr.log" );
+    int x = lcpex( cmd3, "stdout.log", "stderr.log", true );
     return x;
 }
