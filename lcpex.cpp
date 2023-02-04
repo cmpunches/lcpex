@@ -11,14 +11,15 @@ int main( int argc, char *argv[] )
     // (ncurses) (not working - no vpty)
     std::string cmd = R"(/usr/bin/dialog --title "This should be one argument" --inputbox "Enter your name:" 0 0)";
 
-    // (whiptail) (working)
-    //std::string cmd = R"(/usr/bin/bash -c 'TERM=ansi whiptail --title "Example Dialog" --yesno "This is an example of a yes/no box." 8 78')";
-
     // test of exit code return
     //std::string cmd = R"(false)";
 
     // test with a command that echos back to stdout/stderr whatever is typed
-    //std::string cmd = R"(/usr/bin/parrot)";
+    //std::string cmd2 = R"(/usr/bin/parrot)";
+
+    // (whiptail) (working)
+    std::string cmd3 = R"(/usr/bin/bash -c 'TERM=ansi whiptail --title "Example Dialog" --yesno "This is an example of a yes/no box." 8 78')";
+
 
     // parrot is just a dummy repeater script in bash:
     /*
@@ -35,6 +36,6 @@ int main( int argc, char *argv[] )
 
     //int x = execute( cmd, "stdout.log", "stderr.log" );
     int x = execute_pty( cmd, "stdout.log", "stderr.log" );
-    int y = execute_pty( cmd, "stdout.log", "stderr.log" );
+    int y = execute_pty( cmd3, "stdout.log", "stderr.log" );
     return x;
 }

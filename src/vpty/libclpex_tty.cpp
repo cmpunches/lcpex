@@ -63,9 +63,18 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
         case 0:
         {
             // child process
+            // start ptyfork integration
+            // close the read end of the stderr pipe
+            close( fd_child_stderr_pipe[READ_END] );
 
+
+
+            // redirect stderr to the write end of the stderr pipe
             // close the file descriptor STDERR_FILENO if it was previously open, then (re)open it as a copy of
             while ((dup2(fd_child_stderr_pipe[WRITE_END], STDERR_FILENO) == -1) && (errno == EINTR)) {}
+
+            // close the write end of the stderr pipe
+            close( fd_child_stderr_pipe[WRITE_END] );
 
             // execute the dang command, print to stdout, stderr (of parent), and dump to file for each!!!!
             // (and capture exit code in parent)
@@ -77,12 +86,11 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
         default:
         {
             // parent process
-
             // start ptyfork integration
             ttySetRaw(STDIN_FILENO, &ttyOrig);
 
-            // The parent process has no need to access the entrance to the pipe, so fd_child_*_pipe[1|0] should be
-            // closed within that process too:
+
+            // The parent process has no need to access the entrance to the pipe
             close(fd_child_stderr_pipe[WRITE_END]);
 
             // attempt to write to stdout,stderr from child as well as to write each to file
@@ -96,14 +104,15 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
 
             // populate the watched_fds array
 
-            // child STDOUT to parent
+            // child in to parent
             watched_fds[0].fd = STDIN_FILENO;
             watched_fds[0].events = POLLIN;
 
-            // child STDERR to parent
+            // child pty to parent (stdout)
             watched_fds[1].fd = masterFd;
             watched_fds[1].events = POLLIN;
 
+            // child stderr to parent
             watched_fds[2].fd = fd_child_stderr_pipe[READ_END];
             watched_fds[2].events = POLLIN;
 
@@ -116,16 +125,19 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
             // loop until we've read all the data from the child process
             while ( ! break_out ) {
                 num_files_readable = poll(watched_fds, sizeof(watched_fds) / sizeof(watched_fds[0]), -1);
+
                 if (num_files_readable == -1) {
                     // error occurred in poll()
                     safe_perror("poll", &ttyOrig );
                     exit(1);
                 }
+
                 if (num_files_readable == 0) {
                     // poll reports no files readable
                     break_out = true;
                     break;
                 }
+
                 for (int this_fd = 0; this_fd < 3; this_fd++) {
                     if (watched_fds[this_fd].revents & POLLIN) {
                         // this pipe is readable
@@ -139,19 +151,18 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
                             // reached EOF on one of the streams but not a HUP
                             // we've read all we can this cycle, so go to the next fd in the for loop
                             continue;
-                            //break;
                         } else {
                             // byte count was sane
                             // write to stdout,stderr
                             if (this_fd == 0) {
-                                // the child's stdout pipe is readable
+                                // parent stdin received, write to child pty (stdin)
                                 write(masterFd, buf, byte_count);
                             } else if (this_fd == 1 ) {
-                                // the child's stdout pipe is readable
+                                // child pty sent some stuff, write to parent stdout and log
                                 write(stdout_log_fh->_fileno, buf, byte_count);
                                 write(STDOUT_FILENO, buf, byte_count);
                             } else if ( this_fd == 2 ){
-                                //the child's stderr
+                                //the child's stderr pipe sent some stuff, write to parent stderr and log
                                 write(stderr_log_fh->_fileno, buf, byte_count);
                                 write(STDERR_FILENO, buf, byte_count);
                             } else {
@@ -163,16 +174,15 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
                     }
                     if (watched_fds[this_fd].revents & POLLERR) {
                         close(watched_fds[this_fd].fd);
-                        break_out = true;
+                        //break_out = true;
+                        continue;
                     }
                     if (watched_fds[this_fd].revents & POLLHUP) {
                         // this pipe has hung up
-                        // go to the next fd in the for loop
                         close(watched_fds[this_fd].fd);
                         break_out = true;
-                        //break;
+                        break;
                     }
-
                 }
             }
             // wait for child to exit, capture status

@@ -5,6 +5,12 @@
 
 #include "tty_functions.h"
 
+/* Reset terminal mode on program exit */
+void ttyResetExit( struct termios * ttyOrig )
+{
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, ttyOrig) == -1)
+        perror("tcsetattr");
+}
 
 /* Place terminal referred to by 'fd' in cbreak mode (noncanonical mode
    with echoing turned off). This function assumes that the terminal is
@@ -13,15 +19,6 @@
    made by the ttySetRaw() function below). Return 0 on success, or -1
    on error. If 'prevTermios' is non-NULL, then use the buffer to which
    it points to return the previous terminal settings. */
-
-/* Reset terminal mode on program exit */
-void ttyResetExit( struct termios * ttyOrig )
-{
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, ttyOrig) == -1)
-        perror("tcsetattr");
-}
-
-
 int ttySetCbreak(int fd, struct termios *prevTermios)
 {
     struct termios t;
@@ -70,7 +67,8 @@ int ttySetRaw(int fd, struct termios *prevTermios)
        No 8th-bit stripping or parity error handling.
        Disable START/STOP output flow control. */
 
-    t.c_oflag &= ~OPOST;                /* Disable all output processing */
+    // this breaks cursor position change tracking in parent processes
+    //t.c_oflag &= ~OPOST;                /* Disable all output processing */
 
     t.c_cc[VMIN] = 1;                   /* Character-at-a-time input */
     t.c_cc[VTIME] = 0;                  /* with blocking */
