@@ -14,11 +14,13 @@ int main( int argc, char *argv[] )
     //std::string cmd = R"(false)";
 
     // test with a command that echos back to stdout/stderr whatever is typed
-    //std::string cmd2 = R"(/usr/bin/parrot)";
+    std::string cmd2 = R"(/usr/bin/parrot)";
 
     // (whiptail) (working)
-    std::string cmd3 = R"(/usr/bin/bash -c 'TERM=ansi whiptail --title "Example Dialog" --yesno "This is an example of a yes/no box." 8 78')";
+    //std::string cmd3 = R"(whiptail --title "Example Dialog" --yesno "This is an example of a yes/no box." 8 78)";
 
+    // test context
+    std::string cmd3 = R"(/bin/whodat2)";
 
     // parrot is just a dummy repeater script in bash:
     /*
@@ -33,6 +35,6 @@ int main( int argc, char *argv[] )
 
      */
 
-    int x = lcpex( cmd3, "stdout.log", "stderr.log", true );
+    int x = lcpex( cmd3, "stdout.log", "stderr.log", "bagira", "bagira", true );
     return x;
 }

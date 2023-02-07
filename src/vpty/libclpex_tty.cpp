@@ -1,5 +1,6 @@
 #include "libclpex_tty.h"
 
+
 void safe_perror( const char * msg, struct termios * ttyOrig )
 {
     std::cerr << msg << std::endl;
@@ -7,11 +8,54 @@ void safe_perror( const char * msg, struct termios * ttyOrig )
     exit(1);
 }
 
+void run_child_process( int fd_child_stderr_pipe[2], char * processed_command[], struct termios * ttyOrig, std::string context_user, std::string context_group )
+{
+    // redirect stderr to the write end of the stderr pipe
+    // close the file descriptor STDERR_FILENO if it was previously open, then (re)open it as a copy of
+    while ((dup2(fd_child_stderr_pipe[WRITE_END], STDERR_FILENO) == -1) && (errno == EINTR)) {}
+
+    // close the write end of the stderr pipe
+    close( fd_child_stderr_pipe[WRITE_END] );
+
+    int context_result = set_identity_context(context_user, context_group);
+    switch (context_result) {
+        case IDENTITY_CONTEXT_ERRORS::ERROR_NONE:
+            break;
+        case IDENTITY_CONTEXT_ERRORS::ERROR_NO_SUCH_USER:
+            std::cerr << "lcpex: Aborting: context user not found: " << context_user << std::endl;
+            exit(1);
+            break;
+        case IDENTITY_CONTEXT_ERRORS::ERROR_NO_SUCH_GROUP:
+            std::cerr << "lcpex: Aborting: context group not found: " << context_group << std::endl;
+            exit(1);
+            break;
+        case IDENTITY_CONTEXT_ERRORS::ERROR_SETGID_FAILED:
+            std::cerr << "lcpex: Aborting: Setting GID failed: " << context_user << "/" << context_group << std::endl;
+            exit(1);
+            break;
+        case IDENTITY_CONTEXT_ERRORS::ERROR_SETUID_FAILED:
+            std::cerr << "lcpex: Aborting: Setting UID failed: " << context_user << "/" << context_group << std::endl;
+            exit(1);
+            break;
+        default:
+            std::cerr << "lcpex: Aborting: Unknown error while setting identity context." << std::endl;
+            exit(1);
+            break;
+    }
+
+
+    // execute the dang command, print to stdout, stderr (of parent), and dump to file for each!!!!
+    // (and capture exit code in parent)
+    int exit_code = execvp(processed_command[0], processed_command);
+    safe_perror("failed on execvp in child", ttyOrig );
+    exit(exit_code);
+}
+
 // this does three things:
 //  - execute a dang string as a subprocess command
 //  - capture child stdout/stderr to respective log files
 //  - TEE child stdout/stderr to parent stdout/stderr
-int execute_pty( std::string command, std::string stdout_log_file, std::string stderr_log_file )
+int exec_pty( std::string command, std::string stdout_log_file, std::string stderr_log_file, std::string context_user, std::string context_group )
 {
     struct termios ttyOrig;
 
@@ -63,24 +107,7 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
         case 0:
         {
             // child process
-            // start ptyfork integration
-            // close the read end of the stderr pipe
-            close( fd_child_stderr_pipe[READ_END] );
-
-
-
-            // redirect stderr to the write end of the stderr pipe
-            // close the file descriptor STDERR_FILENO if it was previously open, then (re)open it as a copy of
-            while ((dup2(fd_child_stderr_pipe[WRITE_END], STDERR_FILENO) == -1) && (errno == EINTR)) {}
-
-            // close the write end of the stderr pipe
-            close( fd_child_stderr_pipe[WRITE_END] );
-
-            // execute the dang command, print to stdout, stderr (of parent), and dump to file for each!!!!
-            // (and capture exit code in parent)
-            int exit_code = execvp(processed_command[0], processed_command);
-            safe_perror("failed on execvp in child", &ttyOrig );
-            exit(exit_code);
+            run_child_process( fd_child_stderr_pipe, processed_command, &ttyOrig, context_user, context_group );
         }
 
         default:
@@ -200,3 +227,4 @@ int execute_pty( std::string command, std::string stdout_log_file, std::string s
         }
     }
 }
+

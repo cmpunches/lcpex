@@ -1,24 +1,79 @@
 #include "liblcpex.h"
 
-
-int lcpex( std::string command, std::string stdout_log_file, std::string stderr_log_file, bool force_pty = false )
-{
+int lcpex(
+        std::string command,
+        std::string stdout_log_file,
+        std::string stderr_log_file,
+        std::string context_user,
+        std::string context_group,
+        bool force_pty = false
+) {
     // if we are forcing a pty, then we will use the vpty library
     if( force_pty )
     {
-        return execute_pty( command, stdout_log_file, stderr_log_file );
+        return exec_pty( command, stdout_log_file, stderr_log_file, context_user, context_group );
     }
 
     // otherwise, we will use the execute function
-    return execute( command, stdout_log_file, stderr_log_file );
+    return execute( command, stdout_log_file, stderr_log_file, context_user, context_group );
+}
+
+void set_cloexec_flag(int fd)
+{
+    if (fcntl(fd, F_SETFD, FD_CLOEXEC) == -1)
+    {
+        perror("fcntl");
+        exit(1);
+    }
+}
+
+// the child process code
+void run_child_process(const char* context_user, const char* context_group, char* processed_command[], int fd_child_stdout_pipe[], int fd_child_stderr_pipe[]) {
+    while ((dup2(fd_child_stdout_pipe[WRITE_END], STDOUT_FILENO) == -1) && (errno == EINTR)) {}
+    while ((dup2(fd_child_stderr_pipe[WRITE_END], STDERR_FILENO) == -1) && (errno == EINTR)) {}
+
+    int context_result = set_identity_context(context_user, context_group);
+    switch (context_result) {
+        case IDENTITY_CONTEXT_ERRORS::ERROR_NONE:
+            break;
+        case IDENTITY_CONTEXT_ERRORS::ERROR_NO_SUCH_USER:
+            std::cerr << "lcpex: Aborting: context user not found: " << context_user << std::endl;
+            exit(1);
+            break;
+        case IDENTITY_CONTEXT_ERRORS::ERROR_NO_SUCH_GROUP:
+            std::cerr << "lcpex: Aborting: context group not found: " << context_group << std::endl;
+            exit(1);
+            break;
+        case IDENTITY_CONTEXT_ERRORS::ERROR_SETGID_FAILED:
+            std::cerr << "lcpex: Aborting: Setting GID failed: " << context_user << "/" << context_group << std::endl;
+            exit(1);
+            break;
+        case IDENTITY_CONTEXT_ERRORS::ERROR_SETUID_FAILED:
+            std::cerr << "lcpex: Aborting: Setting UID failed: " << context_user << "/" << context_group << std::endl;
+            exit(1);
+            break;
+        default:
+            std::cerr << "lcpex: Aborting: Unknown error while setting identity context." << std::endl;
+            exit(1);
+            break;
+    }
+
+    int exit_code = execvp(processed_command[0], processed_command);
+    perror("failed on execvp in child");
+    exit(exit_code);
 }
 
 // this does three things:
 //  - execute a dang string as a subprocess command
 //  - capture child stdout/stderr to respective log files
 //  - TEE child stdout/stderr to parent stdout/stderr
-int execute( std::string command, std::string stdout_log_file, std::string stderr_log_file )
-{
+int execute(
+        std::string command,
+        std::string stdout_log_file,
+        std::string stderr_log_file,
+        std::string context_user,
+        std::string context_group
+){
     // turn our command string into something execvp can consume
     char ** processed_command = expand_env(command );
 
@@ -41,27 +96,10 @@ int execute( std::string command, std::string stdout_log_file, std::string stder
     }
 
     // using O_CLOEXEC to ensure that the child process closes the file descriptors
-    if ( fcntl( fd_child_stdout_pipe[READ_END], F_SETFD, FD_CLOEXEC ) == -1 ) {
-        perror("fcntl");
-        exit(1);
-    }
-    // same for stderr
-    if ( fcntl( fd_child_stderr_pipe[READ_END], F_SETFD, FD_CLOEXEC ) == -1 ) {
-        perror("fcntl");
-        exit(1);
-    }
-
-    // same for stdout write
-    if ( fcntl( fd_child_stdout_pipe[WRITE_END], F_SETFD, FD_CLOEXEC ) == -1 ) {
-        perror("fcntl");
-        exit(1);
-    }
-
-    //    // same for stderr write
-    if ( fcntl( fd_child_stderr_pipe[WRITE_END], F_SETFD, FD_CLOEXEC ) == -1 ) {
-        perror("fcntl");
-        exit(1);
-    }
+    set_cloexec_flag( fd_child_stdout_pipe[READ_END] );
+    set_cloexec_flag( fd_child_stderr_pipe[READ_END] );
+    set_cloexec_flag( fd_child_stdout_pipe[WRITE_END] );
+    set_cloexec_flag( fd_child_stderr_pipe[WRITE_END] );
 
     // status result basket for the parent process to capture the child's exit status
     int status = 616;
@@ -78,16 +116,13 @@ int execute( std::string command, std::string stdout_log_file, std::string stder
         case 0:
         {
             // child process
-
-            // close the file descriptor STDOUT_FILENO if it was previously open, then (re)open it as a copy of
-            while ((dup2(fd_child_stdout_pipe[WRITE_END], STDOUT_FILENO) == -1) && (errno == EINTR)) {}
-            while ((dup2(fd_child_stderr_pipe[WRITE_END], STDERR_FILENO) == -1) && (errno == EINTR)) {}
-
-            // execute the dang command, print to stdout, stderr (of parent), and dump to file for each!!!!
-            // (and capture exit code in parent)
-            int exit_code = execvp(processed_command[0], processed_command);
-            perror("failed on execvp in child");
-            exit(exit_code);
+            run_child_process(
+                    context_user.c_str(),
+                    context_group.c_str(),
+                    processed_command,
+                    fd_child_stdout_pipe,
+                    fd_child_stderr_pipe
+            );
         }
 
         default:
@@ -150,7 +185,6 @@ int execute( std::string command, std::string stdout_log_file, std::string stder
                             // reached EOF on one of the streams but not a HUP
                             // we've read all we can this cycle, so go to the next fd in the for loop
                             continue;
-                            //break;
                         } else {
                             // byte count was sane
                             // write to stdout,stderr
@@ -175,10 +209,8 @@ int execute( std::string command, std::string stdout_log_file, std::string stder
                     }
                     if (watched_fds[this_fd].revents & POLLHUP) {
                         // this pipe has hung up
-                        // go to the next fd in the for loop
                         close(watched_fds[this_fd].fd);
                         break_out = true;
-                        //break;
                     }
 
                 }
@@ -197,3 +229,4 @@ int execute( std::string command, std::string stdout_log_file, std::string stder
         }
     }
 }
+
