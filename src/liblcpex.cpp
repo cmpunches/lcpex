@@ -27,11 +27,15 @@ std::string prefix_generator(
         if (supply_environment) {
             // add the source subcommand
             prefix += "'" + shell_source_subcommand + " " + environment_file_path + " && " + command + "'";
+        } else {
+            // no environment supplied, so just add the command
+            prefix += "'" + command + "'";
         }
     } else {
         // it's not a shell command, so we can just execute it directly
         prefix = command;
     }
+    std::cout << "prefix: " << prefix << std::endl;
     return prefix;
 }
 
@@ -52,7 +56,17 @@ int lcpex(
         std::string environment_file_path
 ) {
 
-
+    // generate the prefix
+    std::string prefix = prefix_generator(
+            command,
+            is_shell_command,
+            shell_path,
+            shell_execution_arg,
+            supply_environment,
+            shell_source_subcommand,
+            environment_file_path
+    );
+    command = prefix;
 
     // if we are forcing a pty, then we will use the vpty library
     if( force_pty )
