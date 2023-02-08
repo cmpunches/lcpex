@@ -78,6 +78,15 @@ int lcpex(
     return execute( command, stdout_log_file, stderr_log_file, context_override, context_user, context_group, supply_environment );
 }
 
+/**
+ * @brief Set the close-on-exec flag of a file descriptor
+ *
+ * This function uses the `fcntl` function to set the close-on-exec flag
+ * of the specified file descriptor `fd`. If the `fcntl` call fails,
+ * the function will print an error message to `stderr` and exit with status 1.
+ *
+ * @param fd The file descriptor for which to set the close-on-exec flag
+ */
 void set_cloexec_flag(int fd)
 {
     if (fcntl(fd, F_SETFD, FD_CLOEXEC) == -1)
@@ -87,7 +96,30 @@ void set_cloexec_flag(int fd)
     }
 }
 
-// the child process code
+/**
+ * @brief This function is executed by the child process to run a shell command
+ *
+ * @param context_override Indicates whether to override the current execution context
+ * @param context_user The user to switch to for execution context
+ * @param context_group The group to switch to for execution context
+ * @param processed_command The command to be executed, after processing
+ * @param fd_child_stdout_pipe The file descriptor for the child process's standard output pipe
+ * @param fd_child_stderr_pipe The file descriptor for the child process's standard error pipe
+ *
+ * The run_child_process() function takes the parameters context_override, context_user, context_group, processed_command,
+ * fd_child_stdout_pipe and fd_child_stderr_pipe.
+ *
+ * If context_override is set to true, the child process will run under the specified context_user and context_group.
+ * If either the context_user or context_group does not exist, an error message will be displayed and the process will exit.
+ *
+ * The function first redirects the child process's standard output and standard error to pipes.
+ *
+ * If context_override is set to true, the child process sets its identity context using the set_identity_context() function.
+ * If an error occurs while setting the identity context, a message will be displayed and the process will exit.
+ *
+ * Finally, the child process calls execvp() with the processed_command to run the shell command.
+ * If the execvp() function fails, an error message is displayed.
+ */
 void run_child_process(bool context_override, const char* context_user, const char* context_group, char* processed_command[], int fd_child_stdout_pipe[], int fd_child_stderr_pipe[]) {
     while ((dup2(fd_child_stdout_pipe[WRITE_END], STDOUT_FILENO) == -1) && (errno == EINTR)) {}
     while ((dup2(fd_child_stderr_pipe[WRITE_END], STDERR_FILENO) == -1) && (errno == EINTR)) {}
@@ -125,10 +157,7 @@ void run_child_process(bool context_override, const char* context_user, const ch
     exit(exit_code);
 }
 
-// this does three things:
-//  - execute a dang string as a subprocess command
-//  - capture child stdout/stderr to respective log files
-//  - TEE child stdout/stderr to parent stdout/stderr
+
 int execute(
         std::string command,
         std::string stdout_log_file,
@@ -138,6 +167,11 @@ int execute(
         std::string context_group,
         bool environment_supplied
 ){
+    // this does three things:
+    //  - execute a dang string as a subprocess command
+    //  - capture child stdout/stderr to respective log files
+    //  - TEE child stdout/stderr to parent stdout/stderr
+
     // turn our command string into something execvp can consume
     char ** processed_command = expand_env(command );
 

@@ -20,6 +20,22 @@
 #include <sys/ioctl.h>
 #include <string>
 
+/**
+ * @brief Execute a string as a subprocess command, capture its stdout/stderr to log files, and TEE its output to the parent process's stdout/stderr.
+ * This function performs the following three tasks:
+ * - Execute a string as a subprocess command.
+ * - Capture the child process's stdout and stderr to respective log files.
+ * - TEE the child process's stdout and stderr to the parent process's stdout and stderr.
+ *
+ * @param command The command to be executed as a subprocess.
+ * @param stdout_log_file The file path where the child process's stdout will be logged.
+ * @param stderr_log_file The file path where the child process's stderr will be logged.
+ * @param context_override Specify whether to override the process's execution context.
+ * @param context_user The user context to run the process as, if context_override is true.
+ * @param context_group The group context to run the process as, if context_override is true.
+ * @param environment_supplied Specify whether the environment is supplied.
+ * @return The exit status of the child process. If the child process terminated due to a signal, returns -617.
+ */
 int exec_pty(
         std::string command,
         std::string stdout_log_file,

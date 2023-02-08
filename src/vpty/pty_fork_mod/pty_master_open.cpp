@@ -1,4 +1,4 @@
-/* pty_master_open.c
+/* pty_master_open.cPP
 
    Implement our ptyMasterOpen() function, based on UNIX 98 pseudoterminals.
    See comments below.
@@ -33,8 +33,7 @@ posix_openpt(int flags)
    slave is returned in 'slaveName'. 'snLen' should be set to
    indicate the size of the buffer pointed to by 'slaveName'. */
 
-int
-ptyMasterOpen(char *slaveName, size_t snLen)
+int ptyMasterOpen(char *slaveName, size_t snLen)
 {
     int masterFd, savedErrno;
     char *p;
@@ -58,7 +57,7 @@ ptyMasterOpen(char *slaveName, size_t snLen)
     }
 
     p = ptsname(masterFd);                      /* Get slave pty name */
-    if (p == NULL) {
+    if (p == nullptr) {
         savedErrno = errno;
         close(masterFd);                        /* Might change 'errno' */
         errno = savedErrno;

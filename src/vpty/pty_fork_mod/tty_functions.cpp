@@ -1,8 +1,3 @@
-/* tty_functions.c
-
-   Implement ttySetCbreak() and ttySetRaw().
-*/
-
 #include "tty_functions.h"
 
 /* Reset terminal mode on program exit */
@@ -42,6 +37,8 @@ int ttySetCbreak(int fd, struct termios *prevTermios)
 
     return 0;
 }
+
+
 /* Place terminal referred to by 'fd' in raw mode (noncanonical mode
    with all input and output processing disabled). Return 0 on success,
    or -1 on error. If 'prevTermios' is non-NULL, then use the buffer to

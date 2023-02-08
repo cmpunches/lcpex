@@ -1,6 +1,16 @@
 #include "libclpex_tty.h"
 
-
+/**
+ * @brief Safely prints a message and exits the program
+ *
+ * @param msg The message to print
+ * @param ttyOrig A pointer to a struct termios representing the original terminal settings
+ *
+ * This function takes a message `msg` and a pointer to a struct termios `ttyOrig` as input.
+ * The function first prints the `msg` to `stderr`.
+ * Then, it calls `ttyResetExit()` with `ttyOrig` as its argument to reset the terminal settings.
+ * Finally, the function exits the program with exit code 1.
+ */
 void safe_perror( const char * msg, struct termios * ttyOrig )
 {
     std::cerr << msg << std::endl;
@@ -8,6 +18,30 @@ void safe_perror( const char * msg, struct termios * ttyOrig )
     exit(1);
 }
 
+
+/**
+ * @brief Executes the child process
+ *
+ * @param fd_child_stderr_pipe A file descriptor array for the child process's stderr pipe
+ * @param processed_command An array of char pointers representing the command and its arguments to be executed
+ * @param ttyOrig A pointer to a struct termios representing the original terminal settings
+ * @param context_override A flag indicating whether to override the process's execution context
+ * @param context_user The username to use for the execution context if `context_override` is `true`
+ * @param context_group The group name to use for the execution context if `context_override` is `true`
+ *
+ * This function takes an array of file descriptors `fd_child_stderr_pipe` for the child process's stderr pipe,
+ * an array of char pointers `processed_command` representing the command and its arguments to be executed,
+ * a pointer to a struct termios `ttyOrig` representing the original terminal settings,
+ * a flag `context_override` indicating whether to override the process's execution context,
+ * a string `context_user` representing the username to use for the execution context if `context_override` is `true`,
+ * and a string `context_group` representing the group name to use for the execution context if `context_override` is `true`.
+ *
+ * The function first redirects the child process's stderr to the write end of the stderr pipe.
+ * If `context_override` is `true`, the function sets the process's execution context using `set_identity_context()`.
+ * If `context_override` is `false`, the function does nothing.
+ * Finally, the function executes the command specified in `processed_command` using `execvp()`.
+ * If the execution of `execvp()` fails, the function calls `safe_perror()` to print a message and exit the program.
+ */
 void run_child_process( int fd_child_stderr_pipe[2], char * processed_command[], struct termios * ttyOrig, bool context_override, std::string context_user, std::string context_group )
 {
     // redirect stderr to the write end of the stderr pipe
