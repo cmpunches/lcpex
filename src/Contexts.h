@@ -1,7 +1,3 @@
-//
-// Created by phanes on 2/3/23.
-//
-
 #ifndef LCPEX_CONTEXTS_H
 #define LCPEX_CONTEXTS_H
 
@@ -9,6 +5,7 @@
 #include <csignal>
 #include <pwd.h>
 #include <grp.h>
+#include <iostream>
 
 enum IDENTITY_CONTEXT_ERRORS {
     ERROR_NONE = 0,

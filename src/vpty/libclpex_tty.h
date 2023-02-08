@@ -24,8 +24,10 @@ int exec_pty(
         std::string command,
         std::string stdout_log_file,
         std::string stderr_log_file,
+        bool context_override,
         std::string context_user,
-        std::string context_group
+        std::string context_group,
+        bool environment_supplied
 );
 
 

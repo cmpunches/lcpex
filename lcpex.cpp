@@ -8,7 +8,7 @@ int main( int argc, char *argv[] )
 
     // test with interactive dialogs
     // (ncurses) (not working - no vpty)
-    std::string cmd = R"(/usr/bin/dialog --title "This should be one argument" --inputbox "Enter your name:" 0 0)";
+    std::string cmd = R"(/usr/bin/dialog --title "This should be one argument" --inputbox "Enter your name:" 0 0 && env)";
 
     // test of exit code return
     //std::string cmd = R"(false)";
@@ -35,6 +35,34 @@ int main( int argc, char *argv[] )
 
      */
 
-    int x = lcpex( cmd3, "stdout.log", "stderr.log", "bagira", "bagira", true );
-    return x;
+    /*
+    int x = lcpex(
+            cmd3,
+            "stdout.log",
+            "stderr.log",
+            true,
+            "bagira",
+            "bagira",
+            true,
+            true,
+            "/usr/bin/bash",
+            false,
+            "-c",
+            "source",
+            "/tmp/env.bash"
+    );
+     */
+
+    std::string new_cmd = prefix_generator(
+            cmd,
+            true,
+            "/bin/bash",
+            "-c",
+            true,
+            ".",
+            "/tmp/env.bash"
+    );
+
+    std::cout << new_cmd << std::endl;
+    return 0;
 }

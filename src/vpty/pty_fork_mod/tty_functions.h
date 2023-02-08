@@ -1,7 +1,3 @@
-//
-// Created by phanes on 2/3/23.
-//
-
 #ifndef LCPEX_TTY_FUNCTIONS_H
 #define LCPEX_TTY_FUNCTIONS_H
 

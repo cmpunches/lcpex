@@ -24,8 +24,10 @@ int execute(
         std::string command,
         std::string stdout_log_file,
         std::string stderr_log_file,
+        bool context_override,
         std::string context_user,
-        std::string context_group
+        std::string context_group,
+        bool environment_supplied
 );
 
 
@@ -35,10 +37,27 @@ int lcpex(
         std::string command,
         std::string stdout_log_file,
         std::string stderr_log_file,
+        bool context_override,
         std::string context_user,
         std::string context_group,
-        bool force_pty
+        bool force_pty,
+        bool is_shell_command,
+        std::string shell_path,
+        std::string shell_execution_arg,
+        bool supply_environment,
+        std::string shell_source_subcommand,
+        std::string environment_file_path
 );
 
+
+std::string prefix_generator(
+        std::string command,
+        bool is_shell_command,
+        std::string shell_path,
+        std::string shell_execution_arg,
+        bool supply_environment,
+        std::string shell_source_subcommand,
+        std::string environment_file_path
+);
 
 #endif //LCPEX_LIBLCPEX_H

@@ -12,6 +12,8 @@
 #include <fcntl.h>
 #include <csignal>
 #include <cstring>
+#include <stdlib.h>
+#include <fcntl.h>
 
 int ptyMasterOpen(char *slaveName, size_t snLen);
 

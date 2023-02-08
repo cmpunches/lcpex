@@ -11,8 +11,7 @@
 #define _XOPEN_SOURCE 600
 #endif
 #endif
-#include <stdlib.h>
-#include <fcntl.h>
+
 #include "pty_master_open.h"            /* Declares ptyMasterOpen() */
 
 /* Some implementations don't have posix_openpt() */

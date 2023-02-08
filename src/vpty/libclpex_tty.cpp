@@ -8,7 +8,7 @@ void safe_perror( const char * msg, struct termios * ttyOrig )
     exit(1);
 }
 
-void run_child_process( int fd_child_stderr_pipe[2], char * processed_command[], struct termios * ttyOrig, std::string context_user, std::string context_group )
+void run_child_process( int fd_child_stderr_pipe[2], char * processed_command[], struct termios * ttyOrig, bool context_override, std::string context_user, std::string context_group )
 {
     // redirect stderr to the write end of the stderr pipe
     // close the file descriptor STDERR_FILENO if it was previously open, then (re)open it as a copy of
@@ -17,32 +17,35 @@ void run_child_process( int fd_child_stderr_pipe[2], char * processed_command[],
     // close the write end of the stderr pipe
     close( fd_child_stderr_pipe[WRITE_END] );
 
-    int context_result = set_identity_context(context_user, context_group);
-    switch (context_result) {
-        case IDENTITY_CONTEXT_ERRORS::ERROR_NONE:
-            break;
-        case IDENTITY_CONTEXT_ERRORS::ERROR_NO_SUCH_USER:
-            std::cerr << "lcpex: Aborting: context user not found: " << context_user << std::endl;
-            exit(1);
-            break;
-        case IDENTITY_CONTEXT_ERRORS::ERROR_NO_SUCH_GROUP:
-            std::cerr << "lcpex: Aborting: context group not found: " << context_group << std::endl;
-            exit(1);
-            break;
-        case IDENTITY_CONTEXT_ERRORS::ERROR_SETGID_FAILED:
-            std::cerr << "lcpex: Aborting: Setting GID failed: " << context_user << "/" << context_group << std::endl;
-            exit(1);
-            break;
-        case IDENTITY_CONTEXT_ERRORS::ERROR_SETUID_FAILED:
-            std::cerr << "lcpex: Aborting: Setting UID failed: " << context_user << "/" << context_group << std::endl;
-            exit(1);
-            break;
-        default:
-            std::cerr << "lcpex: Aborting: Unknown error while setting identity context." << std::endl;
-            exit(1);
-            break;
+    // if the user has specified a context override, set the context
+    if ( context_override )
+    {
+        int context_result = set_identity_context(context_user, context_group);
+        switch (context_result) {
+            case IDENTITY_CONTEXT_ERRORS::ERROR_NONE:
+                break;
+            case IDENTITY_CONTEXT_ERRORS::ERROR_NO_SUCH_USER:
+                std::cerr << "lcpex: Aborting: context user not found: " << context_user << std::endl;
+                exit(1);
+                break;
+            case IDENTITY_CONTEXT_ERRORS::ERROR_NO_SUCH_GROUP:
+                std::cerr << "lcpex: Aborting: context group not found: " << context_group << std::endl;
+                exit(1);
+                break;
+            case IDENTITY_CONTEXT_ERRORS::ERROR_SETGID_FAILED:
+                std::cerr << "lcpex: Aborting: Setting GID failed: " << context_user << "/" << context_group << std::endl;
+                exit(1);
+                break;
+            case IDENTITY_CONTEXT_ERRORS::ERROR_SETUID_FAILED:
+                std::cerr << "lcpex: Aborting: Setting UID failed: " << context_user << "/" << context_group << std::endl;
+                exit(1);
+                break;
+            default:
+                std::cerr << "lcpex: Aborting: Unknown error while setting identity context." << std::endl;
+                exit(1);
+                break;
+        }
     }
-
 
     // execute the dang command, print to stdout, stderr (of parent), and dump to file for each!!!!
     // (and capture exit code in parent)
@@ -55,9 +58,24 @@ void run_child_process( int fd_child_stderr_pipe[2], char * processed_command[],
 //  - execute a dang string as a subprocess command
 //  - capture child stdout/stderr to respective log files
 //  - TEE child stdout/stderr to parent stdout/stderr
-int exec_pty( std::string command, std::string stdout_log_file, std::string stderr_log_file, std::string context_user, std::string context_group )
-{
+int exec_pty(
+        std::string command,
+        std::string stdout_log_file,
+        std::string stderr_log_file,
+        bool context_override,
+        std::string context_user,
+        std::string context_group,
+        bool environment_supplied
+) {
+    // initialize the terminal settings obj
     struct termios ttyOrig;
+
+    // if the user chose to supply the environment, then we need to clear the environment
+    // before we fork the process, so that the child process will inherit the environment
+    // from the parent process
+    if ( environment_supplied ) {
+        clearenv();
+    }
 
     // turn our command string into something execvp can consume
     char ** processed_command = expand_env(command );
@@ -107,7 +125,7 @@ int exec_pty( std::string command, std::string stdout_log_file, std::string stde
         case 0:
         {
             // child process
-            run_child_process( fd_child_stderr_pipe, processed_command, &ttyOrig, context_user, context_group );
+            run_child_process( fd_child_stderr_pipe, processed_command, &ttyOrig, context_override, context_user, context_group );
         }
 
         default:

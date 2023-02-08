@@ -1,7 +1,3 @@
-//
-// Created by phanes on 1/29/23.
-//
-
 #ifndef LCPEX_HELPERS_H
 #define LCPEX_HELPERS_H
 

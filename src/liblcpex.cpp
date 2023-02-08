@@ -1,21 +1,67 @@
 #include "liblcpex.h"
 
+std::string prefix_generator(
+        std::string command,
+        bool is_shell_command,
+        std::string shell_path,
+        std::string shell_execution_arg,
+        bool supply_environment,
+        std::string shell_source_subcommand,
+        std::string environment_file_path
+) {
+    std::string prefix = "";
+    if ( is_shell_command ) {
+
+        // it's a shell command, so we need to set up a shell execution of the command
+        prefix = shell_path;
+
+        // if the shell takes an argument to execute a command, add it enclosed in quotes
+        if (shell_execution_arg != "") {
+            // add the execution arg
+            prefix += " " + shell_execution_arg + " ";
+        } else {
+            // no execution arg, so add a space
+            prefix += " ";
+        }
+
+        if (supply_environment) {
+            // add the source subcommand
+            prefix += "'" + shell_source_subcommand + " " + environment_file_path + " && " + command + "'";
+        }
+    } else {
+        // it's not a shell command, so we can just execute it directly
+        prefix = command;
+    }
+    return prefix;
+}
+
+
 int lcpex(
         std::string command,
         std::string stdout_log_file,
         std::string stderr_log_file,
+        bool context_override,
         std::string context_user,
         std::string context_group,
-        bool force_pty = false
+        bool force_pty,
+        bool is_shell_command,
+        std::string shell_path,
+        std::string shell_execution_arg,
+        bool supply_environment,
+        std::string shell_source_subcommand,
+        std::string environment_file_path
 ) {
+
+
+
     // if we are forcing a pty, then we will use the vpty library
     if( force_pty )
     {
-        return exec_pty( command, stdout_log_file, stderr_log_file, context_user, context_group );
+        return exec_pty( command, stdout_log_file, stderr_log_file, context_override, context_user, context_group, supply_environment );
     }
 
     // otherwise, we will use the execute function
-    return execute( command, stdout_log_file, stderr_log_file, context_user, context_group );
+    return execute( command, stdout_log_file, stderr_log_file, context_override, context_user, context_group, supply_environment );
 }
 
 void set_cloexec_flag(int fd)
@@ -28,34 +74,36 @@ void set_cloexec_flag(int fd)
 }
 
 // the child process code
-void run_child_process(const char* context_user, const char* context_group, char* processed_command[], int fd_child_stdout_pipe[], int fd_child_stderr_pipe[]) {
+void run_child_process(bool context_override, const char* context_user, const char* context_group, char* processed_command[], int fd_child_stdout_pipe[], int fd_child_stderr_pipe[]) {
     while ((dup2(fd_child_stdout_pipe[WRITE_END], STDOUT_FILENO) == -1) && (errno == EINTR)) {}
     while ((dup2(fd_child_stderr_pipe[WRITE_END], STDERR_FILENO) == -1) && (errno == EINTR)) {}
 
-    int context_result = set_identity_context(context_user, context_group);
-    switch (context_result) {
-        case IDENTITY_CONTEXT_ERRORS::ERROR_NONE:
-            break;
-        case IDENTITY_CONTEXT_ERRORS::ERROR_NO_SUCH_USER:
-            std::cerr << "lcpex: Aborting: context user not found: " << context_user << std::endl;
-            exit(1);
-            break;
-        case IDENTITY_CONTEXT_ERRORS::ERROR_NO_SUCH_GROUP:
-            std::cerr << "lcpex: Aborting: context group not found: " << context_group << std::endl;
-            exit(1);
-            break;
-        case IDENTITY_CONTEXT_ERRORS::ERROR_SETGID_FAILED:
-            std::cerr << "lcpex: Aborting: Setting GID failed: " << context_user << "/" << context_group << std::endl;
-            exit(1);
-            break;
-        case IDENTITY_CONTEXT_ERRORS::ERROR_SETUID_FAILED:
-            std::cerr << "lcpex: Aborting: Setting UID failed: " << context_user << "/" << context_group << std::endl;
-            exit(1);
-            break;
-        default:
-            std::cerr << "lcpex: Aborting: Unknown error while setting identity context." << std::endl;
-            exit(1);
-            break;
+    if ( context_override ) {
+        int context_result = set_identity_context(context_user, context_group);
+        switch (context_result) {
+            case IDENTITY_CONTEXT_ERRORS::ERROR_NONE:
+                break;
+            case IDENTITY_CONTEXT_ERRORS::ERROR_NO_SUCH_USER:
+                std::cerr << "lcpex: Aborting: context user not found: " << context_user << std::endl;
+                exit(1);
+                break;
+            case IDENTITY_CONTEXT_ERRORS::ERROR_NO_SUCH_GROUP:
+                std::cerr << "lcpex: Aborting: context group not found: " << context_group << std::endl;
+                exit(1);
+                break;
+            case IDENTITY_CONTEXT_ERRORS::ERROR_SETGID_FAILED:
+                std::cerr << "lcpex: Aborting: Setting GID failed: " << context_user << "/" << context_group << std::endl;
+                exit(1);
+                break;
+            case IDENTITY_CONTEXT_ERRORS::ERROR_SETUID_FAILED:
+                std::cerr << "lcpex: Aborting: Setting UID failed: " << context_user << "/" << context_group << std::endl;
+                exit(1);
+                break;
+            default:
+                std::cerr << "lcpex: Aborting: Unknown error while setting identity context." << std::endl;
+                exit(1);
+                break;
+        }
     }
 
     int exit_code = execvp(processed_command[0], processed_command);
@@ -71,11 +119,20 @@ int execute(
         std::string command,
         std::string stdout_log_file,
         std::string stderr_log_file,
+        bool context_override,
         std::string context_user,
-        std::string context_group
+        std::string context_group,
+        bool environment_supplied
 ){
     // turn our command string into something execvp can consume
     char ** processed_command = expand_env(command );
+
+    // if the user chose to supply the environment, then we need to clear the environment
+    // before we fork the process, so that the child process will inherit the environment
+    // from the parent process
+    if ( environment_supplied ) {
+        clearenv();
+    }
 
     // open file handles to the two log files we need to create for each execution
     FILE * stdout_log_fh = fopen( stdout_log_file.c_str(), "a+" );
@@ -117,6 +174,7 @@ int execute(
         {
             // child process
             run_child_process(
+                    context_override,
                     context_user.c_str(),
                     context_group.c_str(),
                     processed_command,
